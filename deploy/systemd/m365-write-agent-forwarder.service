@@ -1,0 +1,15 @@
+[Unit]
+Description=Forward governed Microsoft 365 draft writes to the integration VM
+After=network-online.target openshell.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloud-user
+Environment=HOME=/home/cloud-user
+ExecStart=/usr/local/bin/openshell sandbox exec --no-tty --name taj2 -- node /sandbox/lib/m365-write/agent-forwarder.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

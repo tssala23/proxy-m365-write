@@ -1,0 +1,24 @@
+display_name: Microsoft 365 write inter-VM proxy
+description: Substitutes a static capability bearer when the agent invokes the integrations-VM draft proxy
+category: data
+credentials:
+  - name: bearer
+    env_vars: [M365_WRITE_INTERVM_BEARER]
+    required: true
+    auth_style: header
+    header_name: X-M365-Write-Bearer
+    refresh:
+      strategy: static
+discovery:
+  credentials: [bearer]
+endpoints:
+  - host: taj2-int-m365-write.saw-taj2.svc.cluster.local
+    port: 18791
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+binaries:
+  - /usr/local/bin/node
+  - /usr/bin/node
+  - /usr/bin/node-22
+version: 1

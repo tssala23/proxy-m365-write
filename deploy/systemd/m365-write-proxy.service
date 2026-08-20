@@ -1,0 +1,15 @@
+[Unit]
+Description=Microsoft 365 draft-only policy proxy inside OpenShell
+After=network-online.target openshell.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloud-user
+Environment=HOME=/home/cloud-user
+ExecStart=/usr/local/bin/openshell sandbox exec --no-tty --name proxy-m365-write -- /sandbox/proxy-m365-write
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

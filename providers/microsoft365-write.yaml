@@ -1,0 +1,34 @@
+id: microsoft365-write
+display_name: Microsoft 365 draft writer
+description: Gateway-refreshed delegated Graph credential restricted to creating Outlook drafts
+category: data
+inference_capable: false
+credentials:
+  - name: access_token
+    env_vars: [CLIMICROSOFT365_ACCESS_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2-refresh-token
+      token_url: https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token
+      scopes: []
+      refresh_before_seconds: 300
+      max_lifetime_seconds: 3600
+      material:
+        - name: client_id
+          required: true
+        - name: refresh_token
+          required: true
+          secret: true
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: graph.microsoft.com
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+binaries:
+  - /sandbox/proxy-m365-write
+version: 1

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taj2-int-m365-write
+  namespace: saw-taj2
+  labels:
+    app.kubernetes.io/name: taj2-int
+    app.kubernetes.io/component: m365-write-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: taj2-int
+    vm.kubevirt.io/name: taj2-int
+  ports:
+    - name: m365-write
+      port: 18791
+      targetPort: 18791
+      protocol: TCP

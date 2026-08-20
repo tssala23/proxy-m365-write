@@ -1,0 +1,4 @@
+/target/
+/.env
+/agent-image/cli.tgz
+*.log

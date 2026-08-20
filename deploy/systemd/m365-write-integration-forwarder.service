@@ -1,0 +1,17 @@
+[Unit]
+Description=Microsoft 365 draft integration forwarder
+After=network-online.target openshell-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloud-user
+Environment=HOME=/home/cloud-user
+Environment=LISTEN_PORT=18791
+Environment=UPSTREAM_SERVER_NAME=default--proxy-m365-write--m365-write.openshell.localhost
+ExecStart=/usr/bin/node /home/cloud-user/proxy-m365-write/forwarders/integration-forwarder.mjs
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
