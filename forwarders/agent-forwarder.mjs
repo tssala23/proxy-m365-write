@@ -2,9 +2,11 @@ import http from 'node:http';
 
 const upstream = process.env.M365_WRITE_UPSTREAM ?? 'http://taj2-int-m365-write.saw-taj2.svc.cluster.local:18791';
 const maxBytes = 64 * 1024;
+const allowedPath = value => value === '/v1.0/me/messages' ||
+  /^\/v1\.0\/me\/messages\/[A-Za-z0-9_.=%-]{1,512}\/send$/.test(value ?? '');
 
 const server = http.createServer(async (request, response) => {
-  if (request.method !== 'POST' || request.url !== '/v1.0/me/messages') return response.writeHead(403).end();
+  if (request.method !== 'POST' || !allowedPath(request.url)) return response.writeHead(403).end();
   const authorization = request.headers.authorization;
   if (typeof authorization !== 'string') return response.writeHead(401).end();
   const chunks = []; let size = 0;

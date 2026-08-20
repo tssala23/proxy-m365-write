@@ -26,3 +26,20 @@ pub async fn create_draft(
         .await
         .map_err(|error| ProxyError(format!("upstream request failed: {error:#}")))
 }
+
+pub async fn send_draft(
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token_placeholder: &str,
+    encoded_draft_id: &str,
+) -> Result<Response, ProxyError> {
+    client
+        .post(format!(
+            "{base_url}/v1.0/me/messages/{encoded_draft_id}/send"
+        ))
+        .bearer_auth(access_token_placeholder)
+        .header("content-length", "0")
+        .send()
+        .await
+        .map_err(|error| ProxyError(format!("upstream request failed: {error:#}")))
+}

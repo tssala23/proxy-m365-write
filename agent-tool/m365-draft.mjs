@@ -21,8 +21,13 @@ function proposalPath(id) {
 function digest(draft) { return createHash('sha256').update(JSON.stringify(draft)).digest('hex'); }
 function recipients(addresses) { return addresses.map(address => ({ emailAddress: { address } })); }
 function summary(proposal) {
+  if (proposal.kind === 'send') return {
+    id: proposal.id, kind: 'send', status: proposal.status, digest: proposal.digest,
+    sourceProposalId: proposal.sourceProposalId, graphDraftId: proposal.graphDraftId,
+    draftDigest: proposal.draftDigest, sentAt: proposal.sentAt,
+  };
   return {
-    id: proposal.id, status: proposal.status, digest: proposal.digest,
+    id: proposal.id, kind: 'create-draft', status: proposal.status, digest: proposal.digest,
     subject: proposal.draft.subject,
     contentType: proposal.draft.body.contentType,
     body: proposal.draft.body.content,
@@ -39,6 +44,14 @@ async function save(proposal) {
   await rename(temporary, target);
 }
 async function load(id) { return JSON.parse(await readFile(proposalPath(id), 'utf8')); }
+async function capability() {
+  let token = process.env.M365_WRITE_INTERVM_BEARER;
+  if (!token) {
+    try { token = (await readFile(placeholderFile, 'utf8')).trim(); } catch { /* handled below */ }
+  }
+  if (!token) fail('M365_WRITE_INTERVM_BEARER is unavailable');
+  return token;
+}
 
 async function propose(args) {
   const subject = value(args, '--subject');
@@ -62,11 +75,7 @@ async function approve(args) {
   const proposal = await load(id);
   if (proposal.status !== 'proposed') fail(`Proposal is ${proposal.status}, not proposed`);
   if (digest(proposal.draft) !== proposal.digest) fail('Proposal integrity check failed');
-  let token = process.env.M365_WRITE_INTERVM_BEARER;
-  if (!token) {
-    try { token = (await readFile(placeholderFile, 'utf8')).trim(); } catch { /* handled below */ }
-  }
-  if (!token) fail('M365_WRITE_INTERVM_BEARER is unavailable');
+  const token = await capability();
   const response = await fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(proposal.draft) });
   const text = await response.text();
   if (!response.ok) fail(`Draft creation failed (${response.status}): ${text}`);
@@ -78,16 +87,50 @@ async function approve(args) {
   console.log(JSON.stringify(summary(proposal), null, 2));
 }
 
+async function proposeSend(args) {
+  const sourceProposalId = value(args, '--draft-proposal-id');
+  if (!sourceProposalId) fail('Usage: m365-draft propose-send --draft-proposal-id PROPOSAL_ID');
+  const source = await load(sourceProposalId);
+  if (source.status !== 'executed' || !source.graphDraftId) fail('Source proposal is not an executed draft creation');
+  if (digest(source.draft) !== source.digest) fail('Source draft integrity check failed');
+  const action = { sourceProposalId, graphDraftId: source.graphDraftId, draftDigest: source.digest };
+  const proposal = { version: 1, kind: 'send', id: randomUUID(), status: 'proposed', createdAt: new Date().toISOString(), ...action, digest: digest(action) };
+  await save(proposal);
+  console.log(JSON.stringify(summary(proposal), null, 2));
+  console.log(`\nNothing was sent. After the user confirms this exact send proposal, run: m365-draft approve-send --id ${proposal.id}`);
+}
+
+async function approveSend(args) {
+  const id = value(args, '--id');
+  if (!id) fail('Usage: m365-draft approve-send --id SEND_PROPOSAL_ID');
+  const proposal = await load(id);
+  if (proposal.kind !== 'send' || proposal.status !== 'proposed') fail('Proposal is not a pending send proposal');
+  const action = { sourceProposalId: proposal.sourceProposalId, graphDraftId: proposal.graphDraftId, draftDigest: proposal.draftDigest };
+  if (digest(action) !== proposal.digest) fail('Send proposal integrity check failed');
+  const source = await load(proposal.sourceProposalId);
+  if (source.status !== 'executed' || source.graphDraftId !== proposal.graphDraftId || source.digest !== proposal.draftDigest || digest(source.draft) !== source.digest) fail('Source draft no longer matches the send proposal');
+  const token = await capability();
+  const response = await fetch(`${endpoint}/${encodeURIComponent(proposal.graphDraftId)}/send`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+  const text = await response.text();
+  if (!response.ok) fail(`Draft send failed (${response.status}): ${text}`);
+  proposal.status = 'executed';
+  proposal.sentAt = new Date().toISOString();
+  await save(proposal);
+  console.log(JSON.stringify(summary(proposal), null, 2));
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'propose') return propose(args);
   if (command === 'approve') return approve(args);
+  if (command === 'propose-send') return proposeSend(args);
+  if (command === 'approve-send') return approveSend(args);
   if (command === 'show') return console.log(JSON.stringify(summary(await load(value(args, '--id'))), null, 2));
   if (command === 'list') {
     await mkdir(proposalDir, { recursive: true, mode: 0o700 });
     const files = (await readdir(proposalDir)).filter(name => name.endsWith('.json'));
     return console.log(JSON.stringify(await Promise.all(files.map(async name => summary(JSON.parse(await readFile(path.join(proposalDir, name), 'utf8'))))), null, 2));
   }
-  fail('Commands: propose, show, list, approve');
+  fail('Commands: propose, approve, propose-send, approve-send, show, list');
 }
 await main();

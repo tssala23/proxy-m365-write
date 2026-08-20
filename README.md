@@ -1,10 +1,12 @@
 # proxy-m365-write
 
-Governed Microsoft 365 write path for a two-VM OpenShell/OpenClaw deployment. The first milestone can create Outlook drafts only. It cannot send mail, update or delete an item, add attachments, or access another Graph write endpoint.
+Governed Microsoft 365 write path for a two-VM OpenShell/OpenClaw deployment. It can create an Outlook draft and, under a separate approval, send that exact tool-created draft. It cannot update or delete an item, add attachments, use `/sendMail`, or access another Graph write endpoint.
 
 ## Approval flow
 
 OpenClaw first runs `m365-draft propose`. That command saves a local proposal and prints its complete contents, ID, and SHA-256 digest; it makes no network request. After the user explicitly confirms that exact ID in a later message, OpenClaw may run `m365-draft approve --id ...`. The tool verifies the digest and invokes the loopback write path once.
+
+Draft approval never implies send approval. After draft creation, `m365-draft propose-send --draft-proposal-id ...` creates a second local proposal bound to the source proposal, Graph draft ID, and original content digest. Only a later confirmation of that exact send proposal allows `m365-draft approve-send --id ...`. Both proposal types become non-replayable after execution.
 
 ```text
 OpenClaw
@@ -17,11 +19,15 @@ m365-draft approve ── bearer placeholder ──► agent forwarder (agent VM
        ──► draft-only Rust proxy (integration VM sandbox)
        ── Graph token placeholder ──► OpenShell substitutes OAuth token
        ──► POST graph.microsoft.com/v1.0/me/messages
+
+m365-draft propose-send (local only) ──► separate user confirmation
+       ──► m365-draft approve-send
+       ──► POST graph.microsoft.com/v1.0/me/messages/{draft-id}/send
 ```
 
 The real Graph access and refresh tokens live only in the integration VM's OpenShell provider. The agent VM has only a separate, static inter-VM capability. Breaking out of the OpenClaw sandbox therefore does not reveal the Microsoft credential. Defense is layered: both forwarders require the exact method/path, the Rust proxy authenticates the inter-VM capability and validates/re-serializes a strict draft schema, and the integration OpenShell policy permits only the proxy binary to contact Graph.
 
-The approval separation in `agent-tool/SKILL.md` is an agent workflow control. The independently enforced proxy boundary is create-draft-only. A future milestone can make approval itself cryptographically or externally enforced rather than relying on the skill/tool boundary.
+The approval separation in `agent-tool/SKILL.md` is an agent workflow control. Independently, the proxy permits only create-draft and send-identified-draft shapes; send bodies must be empty. A future milestone can make approval itself cryptographically or externally enforced rather than relying on the skill/tool boundary.
 
 ## OpenShell compatibility notes
 
@@ -42,4 +48,4 @@ docker build -t localhost/m365/proxy-m365-write:v1 -f Containerfile .
 
 Runtime variables are `INTER_VM_BEARER_SHA256`, `CLIMICROSOFT365_ACCESS_TOKEN`, and optionally `LISTEN_ADDR` and `GRAPH_API_BASE`. The Graph variable must contain an OpenShell placeholder, never a real token. Render `TENANT_ID` and namespace/service names in the example deployment files for the target environment. Never commit OAuth material or the inter-VM bearer.
 
-Microsoft delegated consent needs `Mail.ReadWrite` to create drafts. `Mail.Send` is neither requested nor needed.
+Microsoft delegated consent needs `Mail.ReadWrite` to create drafts and `Mail.Send` to send them.

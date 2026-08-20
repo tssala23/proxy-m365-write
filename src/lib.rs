@@ -85,6 +85,21 @@ async fn read_limited(mut body: Incoming) -> Result<Vec<u8>, &'static str> {
     Ok(bytes.to_vec())
 }
 
+fn send_draft_id(path: &str) -> Option<&str> {
+    let id = path
+        .strip_prefix("/v1.0/me/messages/")?
+        .strip_suffix("/send")?;
+    if id.is_empty()
+        || id.len() > 512
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.=%".contains(&byte))
+    {
+        return None;
+    }
+    Some(id)
+}
+
 pub async fn handle(
     state: Arc<AppState>,
     request: Request<Incoming>,
@@ -95,9 +110,50 @@ pub async fn handle(
         log_denial(&method, &path, "invalid inter-VM bearer");
         return Ok(response(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
-    if method != Method::POST || path != "/v1.0/me/messages" || request.uri().query().is_some() {
-        log_denial(&method, &path, "only POST /v1.0/me/messages is permitted");
+    let is_create = path == "/v1.0/me/messages";
+    let send_id = send_draft_id(&path);
+    if method != Method::POST
+        || (!is_create && send_id.is_none())
+        || request.uri().query().is_some()
+    {
+        log_denial(
+            &method,
+            &path,
+            "only create-draft and send-draft POSTs are permitted",
+        );
         return Ok(response(StatusCode::FORBIDDEN, "forbidden"));
+    }
+    if let Some(send_id) = send_id {
+        let body = match read_limited(request.into_body()).await {
+            Ok(body) => body,
+            Err(message) => return Ok(response(StatusCode::PAYLOAD_TOO_LARGE, message)),
+        };
+        if !body.is_empty() {
+            return Ok(response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "send request body must be empty",
+            ));
+        }
+        let upstream = match proxy::send_draft(
+            &state.client,
+            &state.config.graph_api_base,
+            &state.config.graph_access_token_placeholder,
+            send_id,
+        )
+        .await
+        {
+            Ok(upstream) => upstream,
+            Err(error) => {
+                eprintln!("[ERROR] {error}");
+                return Ok(response(StatusCode::BAD_GATEWAY, "upstream request failed"));
+            }
+        };
+        let status = upstream.status();
+        let body = upstream.bytes().await.unwrap_or_default();
+        return Ok(Response::builder()
+            .status(status)
+            .body(Full::new(body))
+            .unwrap_or_else(|_| response(StatusCode::BAD_GATEWAY, "response build failed")));
     }
     if request
         .headers()

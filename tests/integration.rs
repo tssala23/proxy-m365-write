@@ -16,11 +16,26 @@ use tokio::net::TcpListener;
 
 async fn graph(request: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     assert_eq!(request.method(), "POST");
-    assert_eq!(request.uri().path(), "/v1.0/me/messages");
     assert_eq!(
         request.headers()["authorization"],
         "Bearer graph-placeholder"
     );
+    if request.uri().path() == "/v1.0/me/messages/draft-1/send" {
+        assert!(
+            request
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .is_empty()
+        );
+        return Ok(Response::builder()
+            .status(StatusCode::ACCEPTED)
+            .body(Full::new(Bytes::new()))
+            .unwrap());
+    }
+    assert_eq!(request.uri().path(), "/v1.0/me/messages");
     let body = request.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["subject"], "Review me");
@@ -157,5 +172,47 @@ async fn rejects_wrong_credentials_paths_methods_and_schema() {
         .await
         .status(),
         StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
+async fn sends_only_an_identified_draft_with_an_empty_body() {
+    let graph = spawn_graph().await;
+    let proxy = spawn_proxy(graph).await;
+    assert_eq!(
+        request(
+            proxy,
+            "POST",
+            "/v1.0/me/messages/draft-1/send",
+            Some("write-secret"),
+            ""
+        )
+        .await
+        .status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        request(
+            proxy,
+            "POST",
+            "/v1.0/me/messages/draft-1/send",
+            Some("write-secret"),
+            "{}"
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        request(
+            proxy,
+            "POST",
+            "/v1.0/me/messages/../send",
+            Some("write-secret"),
+            ""
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
     );
 }
