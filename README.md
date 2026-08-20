@@ -23,6 +23,14 @@ The real Graph access and refresh tokens live only in the integration VM's OpenS
 
 The approval separation in `agent-tool/SKILL.md` is an agent workflow control. The independently enforced proxy boundary is create-draft-only. A future milestone can make approval itself cryptographically or externally enforced rather than relying on the skill/tool boundary.
 
+## OpenShell compatibility notes
+
+With OpenShell `0.0.105+rhaiv.0`, create provider credentials using their injectable environment-variable keys (`M365_WRITE_INTERVM_BEARER` and `CLIMICROSOFT365_ACCESS_TOKEN`). Configure OAuth refresh metadata separately with `openshell provider refresh configure`.
+
+The deployed RHAI supervisor rejects custom static keys as unclassified. Match the working two-VM setup by setting the integration gateway's `supervisor_image` to `quay.io/opendatahub/odh-openshell-supervisor:v0.0.99-rhaiv.0` before creating the proxy sandbox. Also declare TCP port `18791` on the integration VM's KubeVirt masquerade interface; creating a Service alone does not expose an undeclared guest port.
+
+Provider values attached after the agent sandbox was created are delivered dynamically, but SSH-based `sandbox exec` processes do not inherit them. The deployed tool therefore reads an opaque `openshell:resolve:env:v1..._M365_WRITE_INTERVM_BEARER` marker from `/sandbox/.m365-write/intervm-placeholder` when the environment marker is absent. This marker is not the capability secret; the agent VM gateway resolves it only for the attached provider.
+
 ## Development
 
 ```sh

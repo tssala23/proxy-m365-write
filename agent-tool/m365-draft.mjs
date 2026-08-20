@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const proposalDir = process.env.M365_DRAFT_PROPOSAL_DIR || '/sandbox/.m365-write/proposals';
 const endpoint = process.env.M365_DRAFT_ENDPOINT || 'http://127.0.0.1:18081/v1.0/me/messages';
+const placeholderFile = process.env.M365_WRITE_PLACEHOLDER_FILE || '/sandbox/.m365-write/intervm-placeholder';
 
 function fail(message) { console.error(message); process.exit(1); }
 function values(args, name) {
@@ -61,7 +62,10 @@ async function approve(args) {
   const proposal = await load(id);
   if (proposal.status !== 'proposed') fail(`Proposal is ${proposal.status}, not proposed`);
   if (digest(proposal.draft) !== proposal.digest) fail('Proposal integrity check failed');
-  const token = process.env.M365_WRITE_INTERVM_BEARER;
+  let token = process.env.M365_WRITE_INTERVM_BEARER;
+  if (!token) {
+    try { token = (await readFile(placeholderFile, 'utf8')).trim(); } catch { /* handled below */ }
+  }
   if (!token) fail('M365_WRITE_INTERVM_BEARER is unavailable');
   const response = await fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(proposal.draft) });
   const text = await response.text();
